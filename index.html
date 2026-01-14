@@ -1,0 +1,549 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>3D Sandbox Explorer</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            overflow: hidden;
+            background-color: #111;
+            color: #fff;
+        }
+        
+        #container {
+            position: relative;
+            width: 100vw;
+            height: 100vh;
+        }
+        
+        #canvas-container {
+            width: 100%;
+            height: 100%;
+            cursor: grab;
+        }
+        
+        #canvas-container:active {
+            cursor: grabbing;
+        }
+        
+        #ui {
+            position: absolute;
+            top: 20px;
+            left: 20px;
+            background-color: rgba(0, 0, 0, 0.7);
+            padding: 15px;
+            border-radius: 10px;
+            max-width: 300px;
+            backdrop-filter: blur(5px);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+        }
+        
+        h1 {
+            font-size: 1.5rem;
+            margin-bottom: 10px;
+            color: #4CAF50;
+        }
+        
+        .controls {
+            margin-top: 15px;
+        }
+        
+        .control-group {
+            margin-bottom: 8px;
+            display: flex;
+            align-items: center;
+        }
+        
+        .key {
+            display: inline-block;
+            background-color: #333;
+            padding: 3px 8px;
+            margin: 0 5px;
+            border-radius: 4px;
+            font-family: monospace;
+            border: 1px solid #555;
+            min-width: 20px;
+            text-align: center;
+        }
+        
+        p {
+            font-size: 0.9rem;
+            line-height: 1.5;
+            margin-bottom: 5px;
+        }
+        
+        #loading {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            font-size: 1.2rem;
+            color: #4CAF50;
+        }
+        
+        #crosshair {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            width: 20px;
+            height: 20px;
+            pointer-events: none;
+        }
+        
+        .crosshair-dot {
+            position: absolute;
+            width: 4px;
+            height: 4px;
+            background-color: white;
+            border-radius: 50%;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+        }
+        
+        .crosshair-line {
+            position: absolute;
+            background-color: white;
+        }
+        
+        .horizontal {
+            width: 12px;
+            height: 2px;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+        }
+        
+        .vertical {
+            width: 2px;
+            height: 12px;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+        }
+        
+        .stats {
+            position: absolute;
+            bottom: 20px;
+            right: 20px;
+            background-color: rgba(0, 0, 0, 0.7);
+            padding: 10px;
+            border-radius: 5px;
+            font-size: 0.8rem;
+            font-family: monospace;
+        }
+    </style>
+</head>
+<body>
+    <div id="container">
+        <div id="canvas-container"></div>
+        
+        <div id="crosshair">
+            <div class="crosshair-dot"></div>
+            <div class="crosshair-line horizontal"></div>
+            <div class="crosshair-line vertical"></div>
+        </div>
+        
+        <div id="ui">
+            <h1>3D Sandbox Explorer</h1>
+            <p>Look around by moving your mouse. Move around using the keyboard controls below.</p>
+            
+            <div class="controls">
+                <div class="control-group">
+                    <span class="key">W</span>
+                    <span class="key">A</span>
+                    <span class="key">S</span>
+                    <span class="key">D</span>
+                    <span style="margin-left: 10px;">Move around</span>
+                </div>
+                <div class="control-group">
+                    <span class="key">SPACE</span>
+                    <span style="margin-left: 10px;">Move up</span>
+                </div>
+                <div class="control-group">
+                    <span class="key">SHIFT</span>
+                    <span style="margin-left: 10px;">Move down</span>
+                </div>
+                <div class="control-group">
+                    <span class="key">MOUSE</span>
+                    <span style="margin-left: 10px;">Look around</span>
+                </div>
+                <div class="control-group">
+                    <span class="key">ESC</span>
+                    <span style="margin-left: 10px;">Release mouse</span>
+                </div>
+            </div>
+            
+            <p style="margin-top: 15px; font-size: 0.8rem; color: #aaa;">
+                Click on the 3D view to capture mouse pointer for looking around.
+            </p>
+        </div>
+        
+        <div class="stats">
+            <div>Position: <span id="pos-x">0</span>, <span id="pos-y">0</span>, <span id="pos-z">0</span></div>
+            <div>Rotation: <span id="rot-x">0</span>, <span id="rot-y">0</span></div>
+            <div>FPS: <span id="fps">0</span></div>
+        </div>
+        
+        <div id="loading">Loading 3D Sandbox...</div>
+    </div>
+
+    <script>
+        // Main variables
+        let scene, camera, renderer;
+        let cubes = [];
+        let spheres = [];
+        let pyramids = [];
+        let plane;
+        let isMouseLocked = false;
+        let moveForward = false, moveBackward = false, moveLeft = false, moveRight = false;
+        let moveUp = false, moveDown = false;
+        let velocity = new THREE.Vector3();
+        let direction = new THREE.Vector3();
+        let prevTime = performance.now();
+        let fps = 0, frameCount = 0, lastFpsUpdate = 0;
+        
+        // Initialize the 3D scene
+        function init() {
+            // Create scene
+            scene = new THREE.Scene();
+            scene.fog = new THREE.Fog(0x87CEEB, 10, 200);
+            
+            // Create camera
+            camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
+            camera.position.set(0, 5, 15);
+            
+            // Create renderer
+            renderer = new THREE.WebGLRenderer({ antialias: true });
+            renderer.setSize(window.innerWidth, window.innerHeight);
+            renderer.setPixelRatio(window.devicePixelRatio);
+            renderer.shadowMap.enabled = true;
+            renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+            document.getElementById('canvas-container').appendChild(renderer.domElement);
+            
+            // Add lights
+            const ambientLight = new THREE.AmbientLight(0xffffff, 0.6);
+            scene.add(ambientLight);
+            
+            const directionalLight = new THREE.DirectionalLight(0xffffff, 0.8);
+            directionalLight.position.set(50, 100, 50);
+            directionalLight.castShadow = true;
+            directionalLight.shadow.camera.left = -100;
+            directionalLight.shadow.camera.right = 100;
+            directionalLight.shadow.camera.top = 100;
+            directionalLight.shadow.camera.bottom = -100;
+            directionalLight.shadow.mapSize.width = 2048;
+            directionalLight.shadow.mapSize.height = 2048;
+            scene.add(directionalLight);
+            
+            // Create ground plane
+            const planeGeometry = new THREE.PlaneGeometry(200, 200);
+            const planeMaterial = new THREE.MeshPhongMaterial({ 
+                color: 0x3a7c3a,
+                side: THREE.DoubleSide
+            });
+            plane = new THREE.Mesh(planeGeometry, planeMaterial);
+            plane.rotation.x = Math.PI / 2;
+            plane.receiveShadow = true;
+            scene.add(plane);
+            
+            // Create a grid helper
+            const gridHelper = new THREE.GridHelper(200, 50, 0x000000, 0x000000);
+            gridHelper.material.opacity = 0.2;
+            gridHelper.material.transparent = true;
+            scene.add(gridHelper);
+            
+            // Create random objects in the scene
+            createRandomObjects();
+            
+            // Add event listeners
+            setupEventListeners();
+            
+            // Hide loading message
+            document.getElementById('loading').style.display = 'none';
+            
+            // Start animation loop
+            animate();
+        }
+        
+        // Create random 3D objects in the scene
+        function createRandomObjects() {
+            const cubeGeometry = new THREE.BoxGeometry(2, 2, 2);
+            const sphereGeometry = new THREE.SphereGeometry(1, 16, 16);
+            const pyramidGeometry = new THREE.ConeGeometry(1.5, 3, 4);
+            
+            const materials = [
+                new THREE.MeshPhongMaterial({ color: 0xff4444 }),
+                new THREE.MeshPhongMaterial({ color: 0x44ff44 }),
+                new THREE.MeshPhongMaterial({ color: 0x4444ff }),
+                new THREE.MeshPhongMaterial({ color: 0xffff44 }),
+                new THREE.MeshPhongMaterial({ color: 0xff44ff }),
+                new THREE.MeshPhongMaterial({ color: 0x44ffff })
+            ];
+            
+            // Create cubes
+            for (let i = 0; i < 15; i++) {
+                const material = materials[Math.floor(Math.random() * materials.length)];
+                const cube = new THREE.Mesh(cubeGeometry, material);
+                cube.castShadow = true;
+                cube.receiveShadow = true;
+                
+                cube.position.x = (Math.random() - 0.5) * 100;
+                cube.position.z = (Math.random() - 0.5) * 100;
+                cube.position.y = 1;
+                
+                cube.rotation.y = Math.random() * Math.PI * 2;
+                
+                scene.add(cube);
+                cubes.push(cube);
+            }
+            
+            // Create spheres
+            for (let i = 0; i < 10; i++) {
+                const material = materials[Math.floor(Math.random() * materials.length)];
+                const sphere = new THREE.Mesh(sphereGeometry, material);
+                sphere.castShadow = true;
+                sphere.receiveShadow = true;
+                
+                sphere.position.x = (Math.random() - 0.5) * 100;
+                sphere.position.z = (Math.random() - 0.5) * 100;
+                sphere.position.y = 1;
+                
+                scene.add(sphere);
+                spheres.push(sphere);
+            }
+            
+            // Create pyramids
+            for (let i = 0; i = 8; i++) {
+                const material = materials[Math.floor(Math.random() * materials.length)];
+                const pyramid = new THREE.Mesh(pyramidGeometry, material);
+                pyramid.castShadow = true;
+                pyramid.receiveShadow = true;
+                
+                pyramid.position.x = (Math.random() - 0.5) * 100;
+                pyramid.position.z = (Math.random() - 0.5) * 100;
+                pyramid.position.y = 1.5;
+                
+                pyramid.rotation.y = Math.random() * Math.PI * 2;
+                
+                scene.add(pyramid);
+                pyramids.push(pyramid);
+            }
+        }
+        
+        // Set up event listeners for mouse and keyboard
+        function setupEventListeners() {
+            // Mouse lock for looking around
+            document.addEventListener('click', () => {
+                if (!isMouseLocked) {
+                    lockMouse();
+                }
+            });
+            
+            document.addEventListener('pointerlockchange', onPointerLockChange);
+            document.addEventListener('mozpointerlockchange', onPointerLockChange);
+            
+            // Keyboard controls
+            document.addEventListener('keydown', onKeyDown);
+            document.addEventListener('keyup', onKeyUp);
+            
+            // Window resize
+            window.addEventListener('resize', onWindowResize);
+        }
+        
+        // Lock mouse pointer for looking around
+        function lockMouse() {
+            const canvas = renderer.domElement;
+            canvas.requestPointerLock = canvas.requestPointerLock || canvas.mozRequestPointerLock;
+            canvas.requestPointerLock();
+        }
+        
+        // Handle pointer lock change
+        function onPointerLockChange() {
+            isMouseLocked = document.pointerLockElement === renderer.domElement || 
+                           document.mozPointerLockElement === renderer.domElement;
+            
+            if (isMouseLocked) {
+                document.addEventListener('mousemove', onMouseMove);
+                document.getElementById('crosshair').style.display = 'block';
+            } else {
+                document.removeEventListener('mousemove', onMouseMove);
+                document.getElementById('crosshair').style.display = 'none';
+            }
+        }
+        
+        // Handle mouse movement for looking around
+        function onMouseMove(event) {
+            if (!isMouseLocked) return;
+            
+            const movementX = event.movementX || event.mozMovementX || 0;
+            const movementY = event.movementY || event.mozMovementY || 0;
+            
+            // Adjust camera rotation based on mouse movement
+            camera.rotation.y -= movementX * 0.002;
+            camera.rotation.x -= movementY * 0.002;
+            
+            // Limit vertical rotation to prevent flipping
+            camera.rotation.x = Math.max(-Math.PI/2, Math.min(Math.PI/2, camera.rotation.x));
+        }
+        
+        // Handle key down events
+        function onKeyDown(event) {
+            switch(event.code) {
+                case 'KeyW': moveForward = true; break;
+                case 'KeyA': moveLeft = true; break;
+                case 'KeyS': moveBackward = true; break;
+                case 'KeyD': moveRight = true; break;
+                case 'Space': moveUp = true; break;
+                case 'ShiftLeft': 
+                case 'ShiftRight': moveDown = true; break;
+                case 'Escape': 
+                    if (isMouseLocked) {
+                        document.exitPointerLock = document.exitPointerLock || document.mozExitPointerLock;
+                        document.exitPointerLock();
+                    }
+                    break;
+            }
+        }
+        
+        // Handle key up events
+        function onKeyUp(event) {
+            switch(event.code) {
+                case 'KeyW': moveForward = false; break;
+                case 'KeyA': moveLeft = false; break;
+                case 'KeyS': moveBackward = false; break;
+                case 'KeyD': moveRight = false; break;
+                case 'Space': moveUp = false; break;
+                case 'ShiftLeft': 
+                case 'ShiftRight': moveDown = false; break;
+            }
+        }
+        
+        // Handle window resize
+        function onWindowResize() {
+            camera.aspect = window.innerWidth / window.innerHeight;
+            camera.updateProjectionMatrix();
+            renderer.setSize(window.innerWidth, window.innerHeight);
+        }
+        
+        // Update player movement
+        function updateMovement(delta) {
+            // Calculate movement speed based on delta time
+            const speed = 20.0 * delta;
+            
+            // Reset velocity
+            velocity.x = 0;
+            velocity.z = 0;
+            
+            // Calculate direction based on camera rotation
+            direction.z = Number(moveForward) - Number(moveBackward);
+            direction.x = Number(moveRight) - Number(moveLeft);
+            direction.normalize();
+            
+            // Move forward/backward
+            if (moveForward || moveBackward) {
+                velocity.z -= direction.z * Math.cos(camera.rotation.y) * speed;
+                velocity.x -= direction.z * Math.sin(camera.rotation.y) * speed;
+            }
+            
+            // Move left/right
+            if (moveLeft || moveRight) {
+                velocity.x -= direction.x * Math.cos(camera.rotation.y) * speed;
+                velocity.z += direction.x * Math.sin(camera.rotation.y) * speed;
+            }
+            
+            // Move up/down
+            if (moveUp) velocity.y += speed;
+            if (moveDown) velocity.y -= speed;
+            
+            // Apply gravity (simplified)
+            if (!moveUp && !moveDown && camera.position.y > 5) {
+                velocity.y -= 9.8 * delta;
+            }
+            
+            // Apply movement to camera
+            camera.position.x += velocity.x;
+            camera.position.y += velocity.y;
+            camera.position.z += velocity.z;
+            
+            // Keep camera above ground
+            if (camera.position.y < 5) {
+                camera.position.y = 5;
+                velocity.y = 0;
+            }
+            
+            // Update UI with position and rotation
+            updateUI();
+        }
+        
+        // Update UI with position and rotation info
+        function updateUI() {
+            document.getElementById('pos-x').textContent = camera.position.x.toFixed(1);
+            document.getElementById('pos-y').textContent = camera.position.y.toFixed(1);
+            document.getElementById('pos-z').textContent = camera.position.z.toFixed(1);
+            
+            document.getElementById('rot-x').textContent = (camera.rotation.x * (180/Math.PI)).toFixed(1);
+            document.getElementById('rot-y').textContent = (camera.rotation.y * (180/Math.PI)).toFixed(1);
+        }
+        
+        // Calculate FPS
+        function updateFPS() {
+            frameCount++;
+            const now = performance.now();
+            
+            if (now >= lastFpsUpdate + 1000) {
+                fps = Math.round((frameCount * 1000) / (now - lastFpsUpdate));
+                frameCount = 0;
+                lastFpsUpdate = now;
+                
+                document.getElementById('fps').textContent = fps;
+            }
+        }
+        
+        // Animation loop
+        function animate() {
+            requestAnimationFrame(animate);
+            
+            // Calculate delta time for smooth movement
+            const time = performance.now();
+            const delta = (time - prevTime) / 1000;
+            prevTime = time;
+            
+            // Update movement
+            updateMovement(delta);
+            
+            // Update FPS counter
+            updateFPS();
+            
+            // Rotate objects slowly
+            cubes.forEach(cube => {
+                cube.rotation.y += 0.005;
+            });
+            
+            spheres.forEach(sphere => {
+                sphere.position.y = 1 + Math.sin(time * 0.001 + sphere.position.x) * 0.5;
+            });
+            
+            pyramids.forEach(pyramid => {
+                pyramid.rotation.y += 0.003;
+            });
+            
+            // Render the scene
+            renderer.render(scene, camera);
+        }
+        
+        // Initialize the application when page loads
+        window.onload = init;
+    </script>
+</body>
+</html>
